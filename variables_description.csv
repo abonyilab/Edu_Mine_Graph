@@ -1,6 +1,4 @@
 Variable;explanation
-X;ID_x
-ID;hash code of graduates
 Gender;F: female, M: male
 Inst_HUN;Name of higher education institute in Hungarian
 Pr_area_ENG;Name of program area in English
