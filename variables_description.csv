@@ -1,0 +1,19 @@
+Variable;explanation
+X;ID_x
+ID;hash code of graduates
+Gender;F: female, M: male
+Inst_HUN;Name of higher education institute in Hungarian
+Pr_area_ENG;Name of program area in English
+Pr_HUN;Name of HE program in Hungarian
+Pr_ENG_bachelor;Name of bachelor program in English
+Grad_level;Graduation level (A: Higher vocational trainings, B: Bachelor, E: University (equal to Master), F: Collage (equal with Bachelor), M: Master, O: Undivided trainings like law, doctor, P: Special teacher programs)
+FEOR4;Unit groups of Hungarian classification of occupations
+FEOR3;Minor groups of Hungarian classification of occupations
+ISCO1;Major groups of International Standard Classification of Occupations
+ISCO3;Minor groups of International Standard Classification of Occupations
+ISCO1_ENG;Names of major groups of International Standard Classification of Occupations
+ISCO3_ENG;Names of minor groups of International Standard Classification of Occupations
+Req_HEd;Occupations that does require higher education degree
+NUTS_region;County of head of employer
+Weekly_hrs;Weekly working hours
+Mountly_wage_HUF;Mountly gross wage in HUF

@@ -1,0 +1,121 @@
+ISCO;Occupation
+111;Legislators and senior officials
+112;Managing directors and chief executives
+121;Business services and administration managers
+122;Sales, marketing and development managers
+131;Production and specialised services managers
+132;Manufacturing, mining, construction, and distribution managers
+133;Information and communications technology services managers
+134;Professional services managers
+141;Hotel and restaurant managers
+142;Retail and wholesale trade managers
+143;Other services managers
+211;Physical and earth science professionals
+212;Matematicians, actuaries and statisticans
+213;Life Science Professionals 
+214;Engineering professionals (excluding electrotechnology)
+215;Electrotechnology engineers
+216;Architects, planners, surveyors and designers
+221;Medical doctors
+222;Nursing and midwifery professionals
+223;Traditional and complementary medicine professionals
+225;Veterinarians
+226;Other health professionals
+231;University and higher education teachers
+232;Vocational education teachers
+233;Secondary education teachers
+234;Primary school and early childhood teachers
+235;Other teaching professionals
+241;Finance professionals
+242;Administration professionals
+243;Sales, marketing and public relations professionals
+251;Software and applications developers and analysts
+252;Database and network professionals
+261;Legal professionals
+262;Librarians, archivists and curators
+263;Social and religious professionals
+264;Authors, journalists and linguists
+265;Creative and performing artists
+311;Physical and engineering science technicians
+312;Mining, manufacturing and construction supervisors
+313;Process control technicians
+314;Life science technicians and related associate professionals
+315;Ship and aircraft controllers and technicians
+321;Medical and pharmaceutical technicians
+322;Nurses and midwives
+323;Traditional and complementary medicine associate professionals
+324;Veterinary technicians and assistants
+325;Other health associate professionals
+331;Financial and mathematical associate professionals
+332;Sales and purchasing agents and brokers
+333;Business services agents
+334;Administrative and specialised secretaries
+335;Regulatory government associate professionals
+341;Legal, social and religious associate professionals
+342;Sports and fitness workers
+343;Artistic, cultural and culinary associate professionals
+351;Information and communications technology operations and user support technicians
+352;Telecommunications and broadcasting technicians
+411;General office clerks
+412;Secretaries (general)
+413;Keyboard operators
+421;Tellers, money collectors and related clerks
+422;Client information workers
+431;Numerical and material recording clerks
+432;Material-recording and transport clerks
+441;Other clerical support workers
+511;Travel attendants, conductors and guides
+512;Cooks
+513;Waiters and bartenders
+514;Hairdressers, beauticians and related workers
+515;Building and housekeeping supervisors
+516;Other personal services workers
+521;Street and market salespersons
+522;Shop salespersons
+523;Cashiers and ticket clerks
+524;Other sales workers
+531;Child care workers and teachers' aides
+532;Personal care workers in health services
+541;Protective services workers
+611;Market gardeners and crop growers
+612;Animal producers
+613;Mixed crop and animal producers
+621;Forestry and related workers
+622;Fishery workers, hunters and trappers
+711;Building frame and related trades workers
+712;Building finishers and related trades workers
+713;Painters, building structure cleaners and related trades workers
+721;Sheet and structural metal workers, moulders and welders, and related workers
+722;Blacksmiths, toolmakers and related trades workers
+723;Machinery mechanics and repairers
+731;Handicraft workers
+732;Printing trades workers
+741;Electrical equipment installers and repairers
+742;Electronics and telecommunications installers and repairers
+751;Food processing and related trades workers
+752;Wood treaters, cabinet-makers and related trades workers
+753;Garment and related trades workers
+754;Other craft and related workers
+811;Mining and mineral processing plant operators
+812;Metal processing and finishing plant operators
+813;Chemical and photographic products plant and machine operators
+814;Rubber, plastic and paper products machine operators
+815;Textile, fur and leather products machine operators
+816;Food and related products machine operators
+817;Wood processing and papermaking plant operators
+818;Other stationary plant and machine operators
+821;Assemblers
+831;Locomotive engine drivers and related workers
+832;Car, van and motorcycle drivers
+833;Heavy truck and bus drivers
+834;Mobile plant operators
+835;Ships' deck crews and related workers
+911;Domestic, hotel and office cleaners and helpers
+912;Vehicle, window, laundry and other hand cleaning workers
+921;Agricultural, forestry and fishery labourers
+931;Mining and construction labourers
+932;Manufacturing labourers
+933;Transport and storage labourers
+941;Food preparation assistants
+961;Refuse workers
+962;Other elementary workers
