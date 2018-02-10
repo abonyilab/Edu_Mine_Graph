@@ -1,0 +1,1334 @@
+---
+title: "Graph Configuration Model based Evaluation of the Education-Occupation Match"
+subtitle: "related R codes"
+author: Laszlo Gadar, Janos Abonyi
+date: 01/02/2017
+output: pdf_document
+always_allow_html: yes
+---
+
+#Packages
+
+```{r setup, echo=F, warning=F, message=F}
+library(dplyr)
+library(plyr)
+library(reshape2)
+library(ggplot2)
+library(ggdendro)
+library(ggalt) #for dumbbell figure
+library(ggrepel)
+library(scales)
+library(igraph)
+library(poweRlaw)
+library(knitr)
+library(cluster)
+library(lpbrim)
+library(seriation)
+library(readxl)
+```
+
+
+
+#1. Load data
+
+```{r create_dataframe_and_graph, echo=F, warning=F, message=F}
+db<-read.csv("E:/Dropbox/GL_AJ_Edumining/Cikk_0_PLOS_ONE/file/graph_of_hungarian_HE.csv", sep=";", header=T, encoding = "ISO-8859-3", na.strings="NA", stringsAsFactors = F)
+
+edges<-db %>% filter(Grad_level=="B") %>% select(Pr_ENG_bachelor,ISCO3)
+
+g<-graph.data.frame(edges, directed = F)
+V(g)$type<-V(g)$name %in% edges[,2]
+
+A<-get.incidence(g)
+
+g.sim <- simplify(g) #unweighted graph
+A.sim <- get.incidence(g.sim)
+```
+
+#2. Descriptive statistics
+
+##2.1. Number of factor levels of variables
+```{r}
+length(unique(db$ID))
+length(unique(db$Gender))
+length(unique(db$Inst_HUN))
+length(unique(db$Pr_area_ENG))
+length(unique(db$Pr_HUN))
+length(unique(db$Pr_ENG_bachelor))
+length(unique(db$Grad_level))
+length(unique(db$FEOR4))
+length(unique(db$FEOR3))
+length(unique(db$ISCO1))
+length(unique(db$ISCO3))
+length(unique(db$Req_HEd))
+length(unique(db$Head_couty_HUN))
+length(unique(db$Weekly_hrs))
+length(unique(db$Mountly_wage_HUF))
+```
+
+##2.2. Number of graduates in different groups
+```{r, echo=F}
+nrow(db) #number of gradautes who has occupational data
+
+table(db$Grad_level) #number of graduates on different educational level
+
+length(unique(db[db$Grad_level=="B", "Inst_HUN"])) #number of institutions of bachelor graduates
+length(unique(db[db$Grad_level=="B", "Pr_area_ENG"])) #number of training program areas of bachelor graduates
+length(unique(db[db$Grad_level=="B", "Pr_ENG_bachelor"])) #number of programs of bachelor graduates
+length(unique(db[db$Grad_level=="B", "FEOR4"])) #number of 4th level occupations (ISCO) of bachelor graduates
+length(unique(db[db$Grad_level=="B", "FEOR3"])) #number of 3th level occupations (ISCO) of bachelor graduates
+```
+
+##2.3 Distribution of graduates working in occupation category that requires higher education degree
+```{r, echo=F}
+prop.table(table(db$Grad_level, db$Req_HEd),1)
+```
+
+0: occupations that does NOT require higher education
+1: occupations that does require higher education
+
+A: higher vocational trainings
+B: bachelor
+E: univerity (before Bologna)
+F: collage (before Bologna)
+M: master
+O: undivided training (e.g loyar, doctor)
+P: special teacher training
+
+##2.4. Distribution of bachelor graduates working in an occupation that requires higher education degree (Fig1)
+
+```{r shankey_data, echo=F}
+db_bachelor <- db %>% filter(Grad_level=="B")
+
+link1 <- as.data.frame(table(db_bachelor$Pr_area_ENG, db_bachelor$Req_HEd))
+link1$Var1 <- as.character(link1$Var1)
+link1$Var2 <- as.character(link1$Var2)
+link1[link1$Var2==0,2] <- c("not require")
+link1[link1$Var2==1,2] <- c("require")
+
+link2 <- as.data.frame(table(db_bachelor$Req_HEd, db_bachelor$ISCO1_ENG))
+link2$Var1 <- as.character(link2$Var1)
+link2$Var2 <- as.character(link2$Var2)
+link2[link2$Var1==0,1] <- c("not require")
+link2[link2$Var1==1,1] <- c("require")
+
+link <- rbind(link1, link2)
+link$Var1 <- as.character(link$Var1)
+link$Var2 <- as.character(link$Var2)
+link <- link[link$Freq>0,]
+
+#write.csv2(link, "link.csv") #shankey figure made with http://sankeymatic.com/build/
+
+prop.table(table(db_bachelor$Pr_area_ENG, db_bachelor$Req_HEd),1)
+```
+
+##2.5. Distribution of graduates that work on occupation which requiring higher education degree by counties in Hungary (Fig2)
+
+```{r, echo=F}
+table(db_bachelor$NUTS_region, db_bachelor$Req_HEd)
+#write.csv2(prop.table(table(db_bachelor$Head_couty_HUN, db_bachelor$Req_HEd),1), file="prop.county.csv", sep=";")
+```
+
+##2.6. Gender pay gap (Fig.3, Fig.4)
+
+Lollipop chart on wage differences by gender
+
+```{r, echo=F}
+#https://www.r-bloggers.com/beating-lollipops-into-dumbbells/
+
+db.l <- db[db$Grad_level=="B" & db$Weekly_hrs>36 & db$Mountly_wage_HUF>93000, c("Gender", "Mountly_wage_HUF", "Pr_area_ENG")]
+
+db.l <- aggregate(Mountly_wage_HUF ~ Gender + Pr_area_ENG, db.l, median)
+db.l <- dcast(db.l, Pr_area_ENG ~ Gender)
+colnames(db.l)[c(3,2)] <- c("Male", "Female")
+#db.l <- db.l[,c(1,3,2)]
+db.l$diff <- db.l$Male-db.l$Female
+db.l <- arrange(db.l, desc(Male))
+db.l[1,1] <- "Computer Science and IT"
+db.l <- mutate(db.l, Pr_area_ENG=factor(Pr_area_ENG,
+                                           levels=rev(Pr_area_ENG)))
+```
+
+```{r income_gap_by_pr, echo=F, dpi=300, warning=F}
+ggplot(db.l, aes(x=Female, xend=Male, y=Pr_area_ENG)) + 
+  geom_dumbbell(colour="#686868",
+                colour_x="red", 
+                colour_xend="blue", 
+                size_x=4, 
+                size_xend=4) + 
+  scale_x_continuous(breaks=seq(100000, 300000, by=50000), 
+                     labels=sprintf("%s HUF", comma(seq(100000, 300000, by=50000)))) + 
+  geom_text(data=filter(db.l, Pr_area_ENG=="Computer Science and IT"),
+                     aes(x=Female, y=Pr_area_ENG, label="Female"),
+                     color="red", size=3, vjust=-2, fontface="bold") +
+  geom_text(data=filter(db.l, Pr_area_ENG=="Computer Science and IT"),
+                     aes(x=Male, y=Pr_area_ENG, label="Male"),
+                     color="blue", size=3, vjust=-2, fontface="bold") +
+  theme_bw() + 
+  theme(axis.ticks=element_blank()) +
+  theme(panel.grid.minor=element_blank()) + 
+  theme(panel.border=element_blank()) + 
+  labs(y=NULL, x=NULL)
+
+#ggsave("Fig4.eps", width = 13.2, units="cm")
+```
+
+
+```{r, echo=F}
+db.l <- db[db$Grad_level=="B" & db$Weekly_hrs>36 & db$Mountly_wage_HUF>93000, c("Gender", "Mountly_wage_HUF", "ISCO1")]
+db.l$ISCO1 <- as.character(db.l$ISCO1)
+
+db.l <- aggregate(Mountly_wage_HUF ~ Gender + ISCO1, db.l, median)
+db.l <- dcast(db.l, ISCO1 ~ Gender)
+colnames(db.l)[c(3,2)] <- c("Male", "Female")
+
+db.l$diff <- db.l$Male-db.l$Female
+db.l <- arrange(db.l, desc(Male))
+
+db.l <- mutate(db.l, ISCO1=factor(ISCO1,levels=rev(ISCO1)))
+```
+
+```{r income_gap_by_oc, echo=F, dpi=300}
+ggplot(db.l, aes(x=Female, xend=Male, y=ISCO1)) + 
+  geom_dumbbell(color="#686868", 
+                colour_x="red", 
+                colour_xend="blue", 
+                size_x=4, 
+                size_xend=4) + 
+  scale_x_continuous(breaks=seq(100000, 300000, by=50000), 
+                     labels=sprintf("%s HUF", comma(seq(100000, 300000, by=50000)))) + 
+  geom_text(data=filter(db.l, ISCO1=="1"),
+                     aes(x=Female, y=ISCO1, label="Female"),
+                     color="red", size=3, vjust=-2, fontface="bold") +
+  geom_text(data=filter(db.l, ISCO1=="1"),
+                     aes(x=Male, y=ISCO1, label="Male"),
+                     color="blue", size=3, vjust=-2, fontface="bold") +
+  theme_bw() + 
+  theme(axis.ticks=element_blank()) +
+  theme(panel.grid.minor=element_blank()) + 
+  theme(panel.border=element_blank()) + 
+  labs(y=NULL, x=NULL)
+
+#ggsave("Fig5.eps", width = 13.2, units="cm")
+```
+
+##2.7. Strongest connections (Table4)
+
+```{r, echo=F, warning=F}
+DF.pur <- melt(A)
+DF.pur <- DF.pur[DF.pur$value!=0,]
+DF.pur$Var2 <- as.factor(DF.pur$Var2)
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+DF.pur <- left_join(DF.pur, degree.tr, by=c("Var1"="names"))
+DF.pur <- left_join(DF.pur, degree.oc, by=c("Var2"="names"))
+
+DF.pur$exp <- round((DF.pur$degree.tr * DF.pur$degree.oc) / sum(A)) #(k_i*k_j)/(L)
+DF.pur$diff <- DF.pur$value - DF.pur$exp
+DF.pur$sparse <- ifelse(DF.pur$diff>=0, DF.pur$value, 0)
+
+isco_names <- unique(db_bachelor[,c("ISCO3", "ISCO3_ENG")])
+isco_names$ISCO3 <- as.character(isco_names$ISCO3)
+DF.pur <- left_join(DF.pur, isco_names, by=c("Var2"="ISCO3"))
+colnames(DF.pur)[9] <- "Occupation"
+
+DF.pur %>% select(Var1, Occupation, value, exp, diff) %>% arrange(-diff) %>% head(10)
+
+###
+#DF.pur$Var1 <- as.factor(DF.pur$Var1)
+#c <- data.frame(as.numeric(DF.pur$Var1), DF.pur$Var1)
+#colnames(c) <- c("pr_code", "program")
+#c <- c %>% arrange(pr_code) %>% unique()
+
+#DF.pur <- left_join(DF.pur, c, by=c("Var1"="program"))
+#edges.HE.w <- DF.pur %>% select(pr_code, Var2, value)
+#colnames(edges.HE.w) <- c("pr_code", "isco", "weight")
+#write.csv2(edges.HE.w, "edges.w.csv", sep=";", row.names=F)
+#write.csv2(c, "HE_codes.csv", sep=";", row.names=F)
+```
+
+##2.8. Weakest connections (Table5)
+
+```{r, echo=F}
+DF.pur %>% select(Var1, Occupation, value, exp, diff) %>% arrange(diff) %>% head(10)
+```
+
+#3. Analysis of degree distributions
+
+##3.1. "Program set" of bipartite graph (Fig. 5)
+```{r, echo=F}
+data <- degree(g, v=V(g)[which(V(g)$type==FALSE)])
+data <- data[data>0]
+```
+
+The initial distribution of data can be seen on figure below.
+
+```{r, echo=F}
+data.dist <- data.frame(k=0:max(data),p_k=degree_distribution(g, v=V(g)[which(V(g)$type==FALSE)]))
+data.dist <- data.dist[data.dist$p_k>0,]
+```
+
+```{r distribution_plot_tr.w, fig.align="center", dpi=300, echo=F}
+ggplot(data.dist) + geom_point(aes(x=k, y=p_k)) + theme_bw()
+```
+
+###Initial estimation
+
+This estimation calcualate $K_{min}$, $\gamma$ and makes CDF and determine minimum $D$. With {poweRlaw} functions very easy to achive suggested steps 1-3.
+
+```{r, echo=F}
+m_pl <- displ$new(data)
+est_pl <- estimate_xmin(m_pl)
+
+est_pl$xmin #k_min
+est_pl$pars #gamma
+est_pl$gof #D
+```
+
+###Scanning whole range
+
+```{r for_cicle_D_gamma_kmin.tr.w, fig.align="center", echo=F}
+data.s <- unique(data)
+
+d_est <- data.frame(K_min=sort(data.s)[1:(length(data.s)-2)], gamma=rep(0,length(data.s)-2), D=rep(0,length(data.s)-2))
+
+for (i in d_est$K_min){
+  d_est[which(d_est$K_min == i),2] <- estimate_xmin(m_pl, xmins = i)$pars
+  d_est[which(d_est$K_min == i),3] <- estimate_xmin(m_pl, xmins = i)$gof
+}
+
+K.min_D.min <- d_est[which.min(d_est$D), 1]
+```
+
+```{r Kmin_vs_D_plot.tr.w, fig.align="center", dpi=300, echo=F}
+ggplot(data=d_est, aes(x=K_min, y=D)) + geom_line() + theme_bw() + 
+  geom_vline(xintercept=K.min_D.min, colour="red") + annotate("text", x=K.min_D.min, y=max(d_est$D)/3*2, label=K.min_D.min)
+```
+
+```{r kmin_vs_gamma_plot.tr.w, fig.align="center", dpi=300, echo=F}
+ggplot(data=d_est, aes(x=K_min, y=gamma)) + geom_line() + theme_bw() + 
+  geom_vline(xintercept=K.min_D.min, colour="red") + annotate("text", x=K.min_D.min, y=max(d_est$gamma)/3*2, label=K.min_D.min)
+```
+
+And the fitted power-law on CDF curve.
+
+```{r powerlaw_figure_CDF.tr.w, fig.align="center", echo=F}
+m_pl$setXmin(est_pl)
+plot.data <- plot(m_pl, draw = F)
+fit.data <- lines(m_pl, draw = F)
+```
+
+```{r PL_on_CDF.tr.w, fig.align="center", dpi=300, echo=F}
+ggplot(plot.data) + geom_point(aes(x=log(x), y=log(y))) + labs(x="log(k)", y="log(CDF)") + theme_bw() + 
+  geom_line(data=fit.data, aes(x=log(x), y=log(y)), colour="red")  
+```
+
+###Investigate goodness of fit
+
+```{r powerlaw_estimations_by_bootstrapping.tr.w, message=F, warning=F, fig.align="center", dpi=300, echo=F}
+bs_pl <- bootstrap_p(m_pl, no_of_sims=1000, threads=8, seed = 123)
+#threads=core number of processor that used by function
+#parallel::detectCores() determines how many cores in your computer
+
+plot(bs_pl)
+```
+
+```{r bootstrap_figures.tr.w, warning=F, message=F, fig.align="center", echo=F}
+df_bs_pl <- bs_pl$bootstraps
+```
+
+```{r frequency_gamma.tr.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+ggplot(data=df_bs_pl, aes(pars)) + geom_histogram() + labs(x="gamma", y="frequency") + theme_bw()
+```
+
+```{r frequency_kmin.tr.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+ggplot(data=df_bs_pl, aes(xmin)) + geom_histogram() + labs(x="K_min", y="frequency") + theme_bw()
+```
+
+```{r gamma_vs_kmin.tr.w, fig.align="center", dpi=300, echo=F}
+gamma_D.min <- d_est[which.min(d_est$D), 2]
+
+ggplot(data=df_bs_pl, aes(x=xmin, y=pars)) + labs(x="K_min", y="gamma") + theme_bw() + 
+  geom_point(shape=21, colour="black", fill="red", size=0.5, stroke=2, 
+             position = position_jitter(), alpha=0.6) +
+  geom_vline(xintercept=K.min_D.min, colour="blue") +
+  geom_hline(yintercept=gamma_D.min, colour="blue") +
+  annotate("text", x=K.min_D.min, y=min(df_bs_pl$pars), label=K.min_D.min, col="blue") +
+  annotate("text", x=min(df_bs_pl$xmin), y=gamma_D.min, label=round(gamma_D.min, digits=2), col="blue")
+```
+
+Initial estimated $\gamma$ and $K_{min}$ denoted with blue colour on the figure.
+
+```{r D_real_D_synthetic.tr.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+D.min <- d_est[which.min(d_est$D), 3]
+
+ggplot(data=df_bs_pl, aes(gof)) + geom_histogram() + labs(x="D", y="frequency") + geom_vline(xintercept=D.min, colour="red") + theme_bw()
+
+bs_pl$p #p value
+```
+
+The $p$ value is `r bs_pl$p`. If $p$ value more than 1% means that null hypothesis cannot be rejected maybe it is a power-law distribution.
+
+
+###Fitting real distribution
+
+```{r saturation_cutoff.tr.w, warning=F, message=F, echo=F}
+#generate kmin & kmax pairs
+pairs <- as.data.frame(t(combn(sort(data.s), 2)))
+pairs$D <- rep(0, length(pairs$V1))
+pairs$gamma <- rep(0, length(pairs$V1))
+
+#scan D for all kmin-kmax pairs
+for (i in 1:length(pairs$D)){
+  m_pl$setXmin(pairs[i,1])
+  pairs[i,3]<- estimate_xmin(m_pl, xmin = pairs[i,1], xmax = pairs[i,2], distance = "ks")$gof
+  pairs[i,4]<- estimate_xmin(m_pl, xmin = pairs[i,1], xmax = pairs[i,2], distance = "ks")$pars
+}
+
+bs_pl_sat_cut <- bootstrap_p(m_pl, xmins = pairs[which.min(pairs$D), 1], xmax = pairs[which.min(pairs$D), 2], no_of_sims = 1000, threads = 8)
+
+#in this range
+pairs[which.min(pairs$D), 3] -> D.tr.w
+bs_pl_sat_cut$p -> p.tr.w
+
+pairs[which.min(pairs$D), 1] -> k_sat.tr.w
+pairs[which.min(pairs$D), 2] -> k_cut.tr.w
+pairs[which.min(pairs$D), 4] -> gamma.tr.w
+```
+
+* $k_{sat}$ = `r pairs[which.min(pairs$D), 1]`
+* $k_{cut}$ = `r pairs[which.min(pairs$D), 2]`
+* _D_ = `r pairs[which.min(pairs$D), 3]`
+* $\gamma$ = `r pairs[which.min(pairs$D), 4]`
+* _p_ = `r bs_pl_sat_cut$p` (by bootstratpping)
+
+```{r compare_different_distributions.tr.w, echo=F}
+#powerlaw
+m_pl = displ$new(data)
+est_pl <- estimate_xmin(m_pl, xmins = k_sat.tr.w, xmax = k_cut.tr.w, pars= gamma.tr.w, distance = "ks")
+m_pl$setXmin(est_pl)
+
+#lognormal
+m_ln = dislnorm$new(data)
+est_ln <- estimate_xmin(m_ln)
+m_ln$setXmin(est_ln)
+
+#exponential
+m_exp = disexp$new(data)
+est_exp <- estimate_xmin(m_exp)
+m_exp$setXmin(est_exp)
+
+#poisson
+m_poi = dispois$new(data)
+est_poi <- estimate_xmin(m_poi)
+m_poi$setXmin(est_poi)
+```
+
+This figure compares different distributions. (red: power-law, green: lognormal, blue: Poisson, magenta: exponential)
+
+```{r compare_different_distributions_figure.tr.w, fig.align="center", dpi=300, echo=F}
+plot(m_pl)
+lines(m_pl, col="red")
+lines(m_ln, col="green")
+lines(m_poi, col="blue")
+lines(m_exp, col="magenta")
+```
+
+```{r powerlaw_figure_CDF.tr, fig.align="center", echo=F}
+m_pl$setXmin(est_pl)
+plot.data <- plot(m_pl, draw = F)
+fit.data <- lines(m_pl, draw = F)
+fit.data.ln <- lines(m_ln, draw=F)
+fit.data.poi <- lines(m_poi, draw=F)
+fit.data.exp <- lines(m_exp, draw=F)
+```
+
+```{r PL_on_CDF.tr2, fig.align="center", dpi=300, echo=F}
+ggplot(plot.data) + 
+  geom_point(aes(x=log(x), y=log(y))) + 
+  labs(x="log(k)", y=bquote(log ~p[k])) + 
+  theme_bw() + 
+  geom_line(data=fit.data[1:74,], aes(x=log(x), y=log(y), colour="Power-law"), size=0.8) +
+  geom_line(data=fit.data.ln, aes(x=log(x), y=log(y), colour="Log-normal"), size=0.2) +
+  geom_line(data=fit.data.poi[1:45, ], aes(x=log(x), y=log(y), colour="Poisson"), size=0.2) +
+  geom_line(data=fit.data.exp[1:90,], aes(x=log(x), y=log(y), colour="Exponential"), size=0.2) +
+  geom_vline(aes(xintercept=log(31)), color = 'red', linetype = 'dashed') +
+  geom_vline(aes(xintercept=log(367)), color = 'red', linetype = 'dashed') +
+  annotate("text", x = 3.3, y = -3, label="k[sat] == 31 ", color="red", angle=90, parse=T) +
+  annotate("text", x = 5.7, y = -1, label="k[cut] == 367", color="red", angle=90, parse=T) +
+  annotate("text", x = 4.6, y = -2.8, label="gamma == 2.00", color="red", parse=T) +
+  scale_colour_manual("", 
+                      breaks = c("Power-law", "Log-normal", "Poisson", "Exponential"),
+                      values = c("magenta", "green", "blue", "red"))
+
+#ggsave("Fig8_v2.pdf", width = 19, height=10, units="cm")
+```
+
+Compare lognormal and powerlaw distribution with Vuong's test
+
+```{r compare_pl_ln, fig.align="center", echo=F}
+m_ln$setXmin(31)
+
+comp <- compare_distributions(m_pl, m_ln)
+comp$p_two_sided
+```
+
+##3.2. "Occupation set" of bigraph (Fig. 6)
+```{r, echo=F}
+data <- degree(g, v=V(g)[which(V(g)$type==TRUE)])
+data <- data[data>0]
+```
+
+The initial distribution of data can be seen on figure below.
+
+```{r, echo=F}
+data.dist <- data.frame(k=0:max(data),p_k=degree_distribution(g, v=V(g)[which(V(g)$type==TRUE)]))
+data.dist <- data.dist[data.dist$p_k>0,]
+```
+
+```{r distribution_plot.oc.w, fig.align="center", dpi=300, echo=F}
+ggplot(data.dist) + geom_point(aes(x=k, y=p_k)) + theme_bw()
+```
+
+It is very similar to power-law distribution but let it see with {powerLaw}.
+
+###Initial estimation
+
+This estimation calcualate $K_{min}$, $\gamma$ and makes CDF and determine minimum $D$. With {poweRlaw} functions very easy to achive suggested steps 1-3.
+
+```{r, echo=F}
+m_pl <- displ$new(data)
+est_pl <- estimate_xmin(m_pl)
+
+est_pl$xmin #k_min
+est_pl$pars #gamma
+est_pl$gof #D
+```
+
+###Scanning whole range
+
+```{r for_cicle_D_gamma_kmin.oc.w, fig.align="center", echo=F}
+data.s <- unique(data)
+
+d_est <- data.frame(K_min=sort(data.s)[1:(length(data.s)-2)], gamma=rep(0,length(data.s)-2), D=rep(0,length(data.s)-2))
+
+for (i in d_est$K_min){
+  d_est[which(d_est$K_min == i),2] <- estimate_xmin(m_pl, xmins = i)$pars
+  d_est[which(d_est$K_min == i),3] <- estimate_xmin(m_pl, xmins = i)$gof
+}
+
+K.min_D.min <- d_est[which.min(d_est$D), 1]
+```
+
+```{r Kmin_vs_D_plot.oc.w, fig.align="center", dpi=300, echo=F}
+ggplot(data=d_est, aes(x=K_min, y=D)) + geom_line() + theme_bw() + 
+  geom_vline(xintercept=K.min_D.min, colour="red") + annotate("text", x=K.min_D.min, y=max(d_est$D)/3*2, label=K.min_D.min)
+```
+
+```{r kmin_vs_gamma_plot.oc.w, fig.align="center", dpi=300, echo=F}
+ggplot(data=d_est, aes(x=K_min, y=gamma)) + geom_line() + theme_bw() + 
+  geom_vline(xintercept=K.min_D.min, colour="red") + annotate("text", x=K.min_D.min, y=max(d_est$gamma)/3*2, label=K.min_D.min)
+```
+
+And the fitted power-law on CDF curve.
+
+```{r powerlaw_figure_CDF.oc.w, fig.align="center", echo=F}
+m_pl$setXmin(est_pl)
+plot.data <- plot(m_pl, draw = F)
+fit.data <- lines(m_pl, draw = F)
+```
+
+```{r PL_on_CDF.oc.w, fig.align="center", dpi=300, echo=F}
+ggplot(plot.data) + geom_point(aes(x=log(x), y=log(y))) + labs(x="log(k)", y="log(CDF)") + theme_bw() + 
+  geom_line(data=fit.data, aes(x=log(x), y=log(y)), colour="red")  
+```
+
+###Investigate goodness of fit
+
+```{r powerlaw_estimations_by_bootstrapping.oc.w, message=F, warning=F, fig.align="center", dpi=300, echo=F}
+bs_pl <- bootstrap_p(m_pl, no_of_sims=1000, threads=8, seed = 123)
+#threads=core number of processor that used by function
+#parallel::detectCores() determines how many cores in your computer
+
+plot(bs_pl)
+```
+
+```{r bootstrap_figures.oc.w, warning=F, message=F, fig.align="center", echo=F}
+df_bs_pl <- bs_pl$bootstraps
+```
+
+```{r frequency_gamma.oc.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+ggplot(data=df_bs_pl, aes(pars)) + geom_histogram() + labs(x="gamma", y="frequency") + theme_bw()
+```
+
+```{r frequency_kmin.oc.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+ggplot(data=df_bs_pl, aes(xmin)) + geom_histogram() + labs(x="K_min", y="frequency") + theme_bw()
+```
+
+```{r gamma_vs_kmin.oc.w, fig.align="center", dpi=300, echo=F}
+gamma_D.min <- d_est[which.min(d_est$D), 2]
+
+ggplot(data=df_bs_pl, aes(x=xmin, y=pars)) + labs(x="K_min", y="gamma") + theme_bw() + 
+  geom_point(shape=21, colour="black", fill="red", size=0.5, stroke=2, 
+             position = position_jitter(), alpha=0.6) +
+  geom_vline(xintercept=K.min_D.min, colour="blue") +
+  geom_hline(yintercept=gamma_D.min, colour="blue") +
+  annotate("text", x=K.min_D.min, y=min(df_bs_pl$pars), label=K.min_D.min, col="blue") +
+  annotate("text", x=min(df_bs_pl$xmin), y=gamma_D.min, label=round(gamma_D.min, digits=2), col="blue")
+```
+
+Initial estimated $\gamma$ and $K_{min}$ denoted with blue colour on the figure.
+
+```{r D_real_D_synthetic.oc.w, fig.align="center", message=F, warning=F, dpi=300, echo=F}
+D.min <- d_est[which.min(d_est$D), 3]
+
+ggplot(data=df_bs_pl, aes(gof)) + geom_histogram() + labs(x="D", y="frequency") + geom_vline(xintercept=D.min, colour="red") + theme_bw()
+
+bs_pl$p #p value
+```
+
+The $p$ value is `r bs_pl$p`. If $p$ value more than 1% means that null hypothesis cannot be rejected maybe it is a power-law distribution.
+
+
+###Fitting real distribution
+
+```{r saturation_cutoff.oc.w, warning=F, message=F, echo=F}
+#generate kmin & kmax pairs
+pairs <- as.data.frame(t(combn(sort(data.s), 2)))
+pairs$D <- rep(0, length(pairs$V1))
+pairs$gamma <- rep(0, length(pairs$V1))
+
+#scan D for all kmin-kmax pairs
+for (i in 1:length(pairs$D)){
+  m_pl$setXmin(pairs[i,1])
+  pairs[i,3]<- estimate_xmin(m_pl, xmin = pairs[i,1], xmax = pairs[i,2], distance = "ks")$gof
+  pairs[i,4]<- estimate_xmin(m_pl, xmin = pairs[i,1], xmax = pairs[i,2], distance = "ks")$pars
+}
+
+bs_pl_sat_cut <- bootstrap_p(m_pl, xmins = pairs[which.min(pairs$D), 1], xmax = pairs[which.min(pairs$D), 2], no_of_sims = 1000, threads = 8)
+
+#in this range
+pairs[which.min(pairs$D), 3] -> D.oc.w
+pairs[which.min(pairs$D), 4] -> gamma.oc.w
+bs_pl_sat_cut$p -> p.oc.w
+
+pairs[which.min(pairs$D), 1] -> k_sat.oc.w
+pairs[which.min(pairs$D), 2] -> k_cut.oc.w
+pairs[which.min(pairs$D), 4] -> gamma.oc.w
+```
+
+* $k_{sat}$ = `r pairs[which.min(pairs$D), 1]`
+* $k_{cut}$ = `r pairs[which.min(pairs$D), 2]`
+* _D_ = `r pairs[which.min(pairs$D), 3]`
+* $\gamma$ = `r pairs[which.min(pairs$D), 4]`
+* _p_ = `r bs_pl_sat_cut$p` (by bootstratpping)
+
+```{r compare_different_distributions.oc.w, echo=F}
+#powerlaw
+m_pl = displ$new(data)
+est_pl <- estimate_xmin(m_pl, xmins = k_sat.oc.w, xmax = k_cut.oc.w, pars = gamma.oc.w, distance = "ks")
+m_pl$setXmin(est_pl)
+
+#lognormal
+m_ln = dislnorm$new(data)
+est_ln <- estimate_xmin(m_ln)
+m_ln$setXmin(est_ln)
+
+#exponential
+m_exp = disexp$new(data)
+est_exp <- estimate_xmin(m_exp)
+m_exp$setXmin(est_exp)
+
+#poisson
+m_poi = dispois$new(data)
+est_poi <- estimate_xmin(m_poi)
+m_poi$setXmin(est_poi)
+```
+
+```{r powerlaw_figure_CDF.oc.w2, fig.align="center", echo=F}
+m_pl$setXmin(est_pl)
+plot.data <- plot(m_pl, draw = F)
+fit.data <- lines(m_pl, draw = F)
+```
+
+```{r PL_on_CDF.oc2, fig.align="center", dpi=300, echo=F}
+ggplot(plot.data) + 
+  geom_point(aes(x=log(x), y=log(y))) + 
+  labs(x="log(k)", y=bquote(log ~p[k])) + 
+  theme_bw() + 
+  geom_line(data=fit.data[1:83,], aes(x=log(x), y=log(y)), colour="red", size=0.8) +
+  geom_vline(aes(xintercept=log(32)), color = 'red', linetype = 'dashed') +
+  geom_vline(aes(xintercept=log(371)), color = 'red', linetype = 'dashed') +
+  annotate("text", x = 3.3, y = -3, label="k[sat] == 32 ", color="red", angle=90, parse=T) +
+  annotate("text", x = 5.7, y = -1, label="k[cut] == 371", color="red", angle=90, parse=T) +
+  annotate("text", x = 4.6, y = -2.8, label="gamma == 2.00", color="red", parse=T)
+
+#ggsave("Fig7.eps", width = 19, units="cm")
+```
+
+
+This figure compares different distributions. (red: power-law, green: lognormal, blue: Poisson, magenta: exponential)
+
+```{r compare_different_distributions_figure.oc.w, fig.align="center", dpi=300, echo=F}
+plot(m_pl)
+lines(m_pl, col="red")
+lines(m_ln, col="green")
+lines(m_poi, col="blue")
+lines(m_exp, col="magenta")
+```
+
+```{r powerlaw_figure_CDF.oc, fig.align="center", echo=F}
+m_pl$setXmin(est_pl)
+plot.data <- plot(m_pl, draw = F)
+fit.data <- lines(m_pl, draw = F)
+fit.data.ln <- lines(m_ln, draw=F)
+fit.data.poi <- lines(m_poi, draw=F)
+fit.data.exp <- lines(m_exp, draw=F)
+```
+
+```{r PL_on_CDF.tr2B, fig.align="center", dpi=300, echo=F}
+ggplot(plot.data) + 
+  geom_point(aes(x=log(x), y=log(y))) + 
+  labs(x="log(k)", y=bquote(log ~p[k])) + 
+  theme_bw() + 
+  geom_line(data=fit.data[1:83,], aes(x=log(x), y=log(y), colour="Power-law"), size=0.8) +
+  geom_line(data=fit.data.ln, aes(x=log(x), y=log(y), colour="Log-normal"), size=0.2) +
+  geom_line(data=fit.data.poi[1:50, ], aes(x=log(x), y=log(y), colour="Poisson"), size=0.2) +
+  geom_line(data=fit.data.exp[1:90,], aes(x=log(x), y=log(y), colour="Exponential"), size=0.2) +
+  geom_vline(aes(xintercept=log(32)), color = 'red', linetype = 'dashed') +
+  geom_vline(aes(xintercept=log(371)), color = 'red', linetype = 'dashed') +
+  annotate("text", x = 3.3, y = -3, label="k[sat] == 32 ", color="red", angle=90, parse=T) +
+  annotate("text", x = 5.7, y = -1, label="k[cut] == 371", color="red", angle=90, parse=T) +
+  annotate("text", x = 4.6, y = -2.8, label="gamma == 2.00", color="red", parse=T) +
+  scale_colour_manual("", 
+                      breaks = c("Power-law", "Log-normal", "Poisson", "Exponential"),
+                      values = c("magenta", "green", "blue", "red"))
+
+#ggsave("Fig7_v2.pdf", width = 19, height=10, units="cm")
+```
+
+Compare lognormal and powerlaw distribution with Vuong's test
+
+```{r compare_pl_ln2, fig.align="center", echo=F}
+m_ln$setXmin(32)
+
+comp <- compare_distributions(m_pl, m_ln)
+comp$p_two_sided
+```
+
+#4. Node measures
+
+##4.1. Centralities
+```{r, echo=F}
+g.pr <- data.frame(nodes=rep(0, 223))
+g.pr$nodes <- V(g)$name
+#rownames(g.pr) <- g.pr$nodes
+g.pr$occ <- 0
+g.pr$occ[111:223] <- 1
+g.pr$degree.weighted <- degree(g)
+g.pr$degree <- degree(g.sim)
+g.pr$betweenness.w <- betweenness(g)
+g.pr$betweenness <- betweenness(g.sim)
+g.pr$eigen.centr.w <- evcent(g)$vector
+g.pr$eigen.centr <- evcent(g.sim)$vector
+g.pr$power.centr.w <- power_centrality(g)
+g.pr$power.centr <- power_centrality(g.sim)
+
+ccBip <- function(g) {
+  if (! "name" %in% list.vertex.attributes(g)) {
+    V(g)$name <- seq_len(vcount(g))
+  }
+  neib <- get.adjlist(g)
+  names(neib) <- V(g)$name
+  proj <- bipartite.projection(g)
+  lapply(proj, function(x) {
+    el <- get.edgelist(x)
+    sapply(V(x)$name, function(v) {
+      subs <- el[,1]==v | el[,2]==v
+      f <- function(un, vn) length(union(un, vn))
+      vals <- E(x)[subs]$weight / unlist(mapply(f, neib[el[subs,1]], neib[el[subs,2]]))
+      mean(vals)
+    })
+  })
+}
+
+a <- ccBip(g)
+g.pr$transitivity.w <- c(a$proj1, a$proj2)
+
+a <- ccBip(g.sim)
+g.pr$transitivity <- c(a$proj1, a$proj2)
+
+g.pr$closeness.w <- closeness(g)
+g.pr$closeness <- closeness(g.sim)
+
+g.pr$pagerank.w <- page.rank(g)$vector
+g.pr$pagerank <- page.rank(g)$vector
+
+g.proj <- bipartite.projection(g)
+g.pr$knn.w <- c(knn(g.proj$proj1)$knn, knn(g.proj$proj2)$knn)
+
+head(g.pr)
+```
+
+##4.2. Distance distribution
+```{r, echo=F}
+mean_distance(g)
+x <- distances(g)
+
+y <- data.frame(min(x):max(x), sapply(min(x):max(x), function(k) length(which(x==k)))/sum(x))
+colnames(y) <- c("d", "p_d")
+res <- nls( p_d ~ k*exp(-1/2*(d-mu)^2/sigma^2), start=c(mu=2.5,sigma=1.5,k=1) , data = y)
+v <- summary(res)$parameters[,"Estimate"]
+fun <- function(d) v[3]*exp(-1/2*(d-v[1])^2/v[2]^2)
+
+ggplot(y, aes(x=d, y=p_d)) + geom_point() + 
+  stat_function(fun = fun, color = "red") +
+  theme_bw() + labs(title="Distance distribution of graph")
+```
+
+fitted equation:
+function(d) $k*exp(-1/2*(d-mu)^2/sigma^2)$
+
+k = `r v[3]`
+mu = `r v[1]`
+sigma = `r v[2]`
+
+The variance of distances is sigma=`r v[2]`, indicating that most path legths are in a close vicinity of mean d. These are manifestations of the small world property. [Barabasi: Network science, 2015]
+
+##4.3. Farthest nodes
+```{r, echo=F}
+q <- which(x==5, arr.ind = TRUE)[1:2,]
+paste(rownames(x)[q[1,1]], "-", colnames(x)[q[1,2]])
+paste(rownames(x)[q[2,1]], "-", colnames(x)[q[2,2]])
+```
+
+
+#5. Clustering methods
+
+##5.1. Create purified graph
+Purified with configuration model (alpha=0.5)
+
+```{r sparsify_by_configuration_model_10, echo=F, warning=F, message=F, echo=F}
+DF.pur <- melt(A)
+DF.pur <- DF.pur[DF.pur$value!=0,]
+DF.pur$Var2 <- as.factor(DF.pur$Var2)
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+DF.pur <- left_join(DF.pur, degree.tr, by=c("Var1"="names"))
+DF.pur <- left_join(DF.pur, degree.oc, by=c("Var2"="names"))
+
+DF.pur$exp <- round((DF.pur$degree.tr * DF.pur$degree.oc * 0.5) / sum(A)) #(k_i*k_j)/(L)
+DF.pur$diff <- DF.pur$value - DF.pur$exp
+DF.pur$sparse <- ifelse(DF.pur$diff>=0, DF.pur$value, 0)
+
+A.pur <- acast(DF.pur, Var1 ~ Var2, value.var = "sparse")
+A.pur[is.na(A.pur)] <- 0
+
+g.pur <- graph.incidence(A.pur, directed=F, multiple = T)
+
+g.pur.sim <- simplify(g.pur) #unweighted graph
+A.pur.sim <- get.incidence(g.pur.sim)
+```
+
+Number of connection in original graph and purified graph:
+* before: L = `r sum(A)`
+* after: L_pur = `r sum(A.pur)`
+
+
+##5.2. Louvain (Fig. 8)
+
+```{r, echo=F, warning=F, message=F}
+lou <- cluster_louvain(g.pur)
+x.lou <- data.frame(lou$names,lou$membership)
+
+longData<-melt(A)
+longData<-longData[longData$value!=0,]
+longData <- left_join(longData, x.lou, by=c("Var1"="lou.names"))
+colnames(longData)[4] <- "Var1_clust"
+longData$Var2 <- as.factor(longData$Var2)
+longData <- left_join(longData, x.lou, by=c("Var2"="lou.names"))
+colnames(longData)[5] <- "Var2_clust"
+longData$col <- ifelse(longData$Var1_clust==longData$Var2_clust, longData$Var1_clust, 0)
+
+longData$Var1 <- factor(longData$Var1, levels=unique(arrange(longData, Var1_clust)[,1]))
+longData$Var2 <- factor(longData$Var2, levels=unique(arrange(longData, Var2_clust)[,2]))
+longData$col <- factor(longData$col)
+
+#color palette for axis
+axis.y.colour <- (longData %>% select(Var1, Var1_clust) %>% unique %>% arrange(Var1_clust) %>% select(Var1_clust))[,1] %>% plyr::mapvalues(from=c(1:10), to=c("#B40404", "#0B6121", "#40FF00", "#FA58D0", "#000000", "#FFBF00", "#997300", "#077292", "#58D3F7", "#336699"))
+
+axis.x.colour <- (longData %>% select(Var2, Var2_clust) %>% unique %>% arrange(Var2_clust) %>% select(Var2_clust))[,1] %>% plyr::mapvalues(from=c(1:10), to=c("#B40404", "#0B6121", "#40FF00", "#FA58D0", "#000000", "#FFBF00", "#997300", "#077292", "#58D3F7", "#336699"))
+```
+
+```{r A.pur_Louvain_figure, fig.align="center", echo=F, fig.height=6.5, message=F, warning=F}
+ggplot(longData, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_gradient(low="grey60", high="red") +
+  labs(x="", y="") +
+  theme_bw() + theme(axis.text.x=element_text(size=4, angle=90, vjust=0.4),
+                     axis.text.y=element_text(size=4),
+                     legend.text=element_text(size=8),
+                     legend.title=element_text(size=8)) +
+  theme(axis.text.y=element_text(colour=axis.y.colour)) +
+  theme(axis.text.x=element_text(colour=axis.x.colour)) +
+  annotate("segment", x = 30.5, xend = 30.5, y = 0, yend = 110.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 52.5, xend = 52.5, y = 0, yend = 110.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 72.5, xend = 72.5, y = 0, yend = 110.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 88.5, xend = 88.5, y = 0, yend = 110.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 0, xend = 113,5, y = 30.5, yend = 30.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 0, xend = 113.5, y = 49.5, yend = 49.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 0, xend = 113.5, y = 72.5, yend = 72.5, colour = "blue", size = 0.2) +
+  annotate("segment", x = 0, xend = 113.5, y = 87.5, yend = 87.5, colour = "blue", size = 0.2) +
+  annotate("text", label="A", x=25, y=25, color="#B40404", size=6 , fontface="bold") +
+  annotate("text", label="B", x=50, y=46, color="#0B6121", size=6 , fontface="bold") +
+  annotate("text", label="C", x=65, y=65, color="#40FF00", size=6 , fontface="bold") +
+  annotate("text", label="D", x=83, y=85, color="#FA58D0", size=6 , fontface="bold") +
+  annotate("text", label="E", x=110, y=107, color="#000000", size=6 , fontface="bold")
+
+#ggsave("Fig8.pdf", width = 22.23, units="cm")
+```
+
+
+###Table 6.
+
+```{r Aij-Pij_Louvain, echo=F, warning=F, message=F}
+longData2 <- melt(A)
+longData2$Var2 <- as.character(longData2$Var2)
+colnames(longData2)[3] <- "Aij"
+#longData2 <- longData2[longData2$Aij>0,]
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+longData2 <- left_join(longData2, degree.tr, by=c("Var1"="names"))
+longData2 <- left_join(longData2, degree.oc, by=c("Var2"="names"))
+
+longData2$Pij <- (longData2$degree.tr * longData2$degree.oc) / sum(A) #(k_i*k_j)/(L)
+
+longData2$Bij <- longData2$Aij - longData2$Pij
+
+longData2 <- left_join(longData2, x.lou, by=c("Var1"="lou.names"))
+colnames(longData2)[8] <- "Var1_clust"
+longData2$Var2 <- as.factor(longData2$Var2)
+longData2 <- left_join(longData2, x.lou, by=c("Var2"="lou.names"))
+colnames(longData2)[9] <- "Var2_clust"
+
+aggdata2 <-aggregate(longData2$Aij, by=list(longData2$Var1_clust, longData2$Var2_clust),FUN=sum)
+Aij <- acast(aggdata2, Group.1 ~ Group.2, value.var = "x")
+Aij[is.na(Aij)] <- 0
+Aij <- Aij[nrow(Aij):1,]
+
+aggdata <-aggregate(longData2$Pij, by=list(longData2$Var1_clust, longData2$Var2_clust),FUN=sum)
+Pij <- acast(aggdata, Group.1 ~ Group.2, value.var = "x")
+Pij[is.na(Pij)] <- 0
+Pij <- Pij[nrow(Pij):1,]
+
+round(Aij / Pij,3)
+
+```
+
+###Germanistics
+An expample
+```{r, echo=F}
+ger <- db_bachelor %>% filter(Pr_ENG_bachelor=="Germanistics")
+prop.table(table(ger$ISCO3_ENG))
+```
+
+
+##5.3. BRIM - Barber algorithm (Fig. 9)
+
+
+```{r, echo=F}
+mod <- findModules(t(A.pur), iter = 100, sparse = F)
+
+A.x <- mod$M
+```
+
+This algorithm has a bootstrapping step. That is why there is no two exactly same figure. But modules are the same. Seed was not set.
+
+```{r, echo=F}
+plotModules(mod)
+```
+
+#6. Multi-resolution method
+
+##6.1. Reamain L after purification (Fig. 7)
+
+```{r}
+L <- rep(0, 101)
+
+for (i in 0:100){
+j <- i/10
+DF.pur <- melt(A)
+DF.pur <- DF.pur[DF.pur$value!=0,]
+DF.pur$Var2 <- as.factor(DF.pur$Var2)
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+DF.pur <- left_join(DF.pur, degree.tr, by=c("Var1"="names"))
+DF.pur <- left_join(DF.pur, degree.oc, by=c("Var2"="names"))
+
+DF.pur$exp <- round((DF.pur$degree.tr * DF.pur$degree.oc * j) / sum(A)) #(k_i*k_j)/(L)
+DF.pur$diff <- DF.pur$value - DF.pur$exp
+DF.pur$sparse <- ifelse(DF.pur$diff>=0, DF.pur$value, 0)
+L[i+1] <- sum(DF.pur$sparse)
+}
+
+L.df <- data.frame(alpha=seq(0,10, by=0.1), L=L)
+L.df$L <- L.df$L/7402
+```
+
+```{r}
+ggplot(L.df) + geom_point(aes(x=alpha, y=L)) + 
+  ylab(expression(L[p]/L)) + xlab(expression(alpha)) + 
+  scale_x_continuous(breaks=seq(0,10,by=1)) +
+  theme_bw()
+
+#ggsave("Fig_Lp_vs_alpha.pdf", height=4.5, width=7)
+```
+
+##6.2. Multi-resolution method with Louvain: training programs
+
+###Scanning gamma (Fig. 10)
+
+```{r}
+Q.var <- rep(0, 101)
+clust <- matrix(0, nrow=223, ncol=101) #223 node, 101 gamma value
+L <- rep(0, 101)
+connections <- rep(0, 101)
+
+for (i in 0:100){
+j <- i/10
+DF.pur <- melt(A)
+DF.pur <- DF.pur[DF.pur$value!=0,]
+DF.pur$Var2 <- as.factor(DF.pur$Var2)
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+DF.pur <- left_join(DF.pur, degree.tr, by=c("Var1"="names"))
+DF.pur <- left_join(DF.pur, degree.oc, by=c("Var2"="names"))
+
+DF.pur$exp <- round((DF.pur$degree.tr * DF.pur$degree.oc * j) / sum(A)) #(k_i*k_j)/(L)
+DF.pur$diff <- DF.pur$value - DF.pur$exp
+DF.pur$sparse <- ifelse(DF.pur$diff>=0, DF.pur$value, 0)
+L[i+1] <- sum(DF.pur$sparse)
+connections[i+1] <- 2054-sum(DF.pur$sparse==0)
+
+A.pur <- acast(DF.pur, Var1 ~ Var2, value.var = "sparse")
+A.pur[is.na(A.pur)] <- 0
+
+g.pur <- graph.incidence(A.pur, directed=F, weighted = T)
+
+lou <- cluster_louvain(g.pur)
+
+clust[,i+1] <- lou$membership
+Q.var[i+1] <- modularity(lou)
+}
+
+rownames(clust) <- lou$names
+colnames(clust) <- seq(0, 10, 0.1)
+```
+
+###Number of clusters
+
+```{r}
+C <- sapply(1:ncol(clust), function(x) max(clust[,x]))
+C <- data.frame(seq(0,10,0.1), C)
+colnames(C)[1] <- "gamma"
+```
+
+```{r}
+#ggplot(C, aes(x=gamma, y=C)) + geom_point() + theme_bw()
+ggplot(C[1:50,], aes(x=gamma, y=C)) + geom_point(size=1.2) + theme_bw() +
+  annotate("segment", x = 1.8, xend = 1.2, y = 5, yend = 5, colour="blue", size=1, arrow=arrow()) + 
+  annotate("segment", x = 4.2, xend = 3.6, y = 10, yend = 10, colour="blue", size=1, arrow=arrow()) +
+  labs(y="Number of clusters", x="alpha")
+
+#ggsave("cikkbe_Fig_C_vs_gamma.pdf", height = 14, width=16, units="cm")
+```
+
+###Number of weights
+
+```{r}
+L <- data.frame(seq(0,10,0.1), L)
+colnames(L)[1] <- "gamma"
+```
+
+```{r}
+ggplot(L, aes(x=gamma, y=L)) + geom_point() + theme_bw()
+ggplot(L[1:70,], aes(x=gamma, y=L)) + geom_point() + theme_bw()
+```
+
+###Number of links
+
+```{r}
+connections <- data.frame(seq(0,10,0.1), connections)
+colnames(connections)[1] <- "gamma"
+```
+
+```{r}
+ggplot(connections, aes(x=gamma, y=connections)) + geom_point() + theme_bw()
+ggplot(connections[1:70,], aes(x=gamma, y=connections)) + geom_point() + theme_bw()
+```
+
+###Similarity of nodes
+
+```{r}
+S <- matrix(0, nrow=223, ncol=223)
+rownames(S) <- rownames(clust)
+colnames(S) <- rownames(clust)
+```
+
+```{r}
+res1 <- 1
+res2 <- 11
+for (i in 1:223){
+  for (j in 1:223){
+    S[i,j] <- sum(clust[i,res1:res2]-clust[j,res1:res2]==0)
+    S[j,i] <- S[i,j]
+  }
+}
+
+S.pr <- S[1:110, 1:110]
+S.pr <- S.pr/(res2-res1+1)
+```
+
+```{r}
+longData<-melt(S.pr)
+longData<-longData[longData$value!=0,]
+
+#o <- seriate(S.pr, method = "BEA_TSP")
+#longData$Var1 <- factor(longData$Var1, levels=names(unlist(o[[1]][])))
+#longData$Var2 <- factor(longData$Var2, levels=names(unlist(o[[1]][])))
+
+#cl <- data.frame(names(unlist(o[[1]][])))
+
+ord <- read.csv("ordering.csv")
+
+#this ordering was saved for repeatability
+
+longData$Var1 <- factor(longData$Var1, levels=ord[,2])
+longData$Var2 <- factor(longData$Var2, levels=ord[,2])
+
+cl <- data.frame(ord[,2])
+
+colnames(cl)[1] <- "programs"
+
+clust2 <- data.frame(rownames(clust), clust[,1])
+rownames(clust2) <- 1:223
+colnames(clust2) <- c("programs", "clusters")
+
+cl <- left_join(cl, clust2, by="programs")
+
+#color palette for axis
+axis.x.colour <- (cl[,2] %>% plyr::mapvalues(from=c(1:10), to=c("#B40404", "#e68a00", "#0B6121", "#000099", "#0099cc", "#00cc99", "#6600cc", "#e600e6", "#999900", "#7094db")))
+
+#ordering <- names(unlist(o[[1]][]))
+#write.csv(ordering, "ordering.csv")
+```
+
+```{r}
+ggplot(longData, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_gradient(low="grey60", high="red") +
+  labs(x="", y="", title="") +
+  theme_bw() + 
+  theme(axis.text.x=element_text(size=5, angle=90, vjust=0.2, hjust=1),
+                     axis.text.y=element_text(size=5),
+                     legend.text=element_text(size=8),
+                     legend.title=element_text(size=8)) +
+  theme(axis.text.x=element_text(colour=axis.x.colour)) +
+  theme(axis.text.y=element_text(colour=axis.x.colour)) +
+  annotate("segment", x = 23.5, xend = 23.5, y = 0, yend = 110.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 42.5, xend = 42.5, y = 0, yend = 110.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 65.5, xend = 65.5, y = 0, yend = 110.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 95.5, xend = 95.5, y = 0, yend = 110.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 110.5, y = 23.5, yend = 23.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 110.5, y = 42.5, yend = 42.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 110.5, y = 65.5, yend = 65.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 110.5, y = 95.5, yend = 95.5, colour = "blue", size = 0.5)
+
+
+#ggsave("cikkbe_Fig_2.9-3.4.pdf", height = 22, width=23, units="cm")
+```
+
+###Programs in clusters table (Fig. 11)
+
+```{r}
+table(clust[,30], clust[,1])
+
+table(clust[1:110,30], clust[1:110,1]) #programs
+table(clust[111:223,30], clust[111:223,1]) #occuptions
+
+clu <- data.frame(
+  name=rownames(clust),
+  gamma0=clust[,1],
+  gamma2.9=clust[,30])
+
+colnames(degree.oc) <- colnames(degree.tr)
+degree <- rbind(degree.tr, degree.oc)
+
+clu <- left_join(clu, degree, by=c("name"="names"))
+
+clu15 <- clu[clu$degree.tr>15,]
+```
+
+
+```{r}
+ggplot(clu[clu$degree.tr>15,]) + geom_point(aes(x=gamma2.9, y=gamma0), color="red") + 
+  geom_text_repel(aes(x=gamma2.9, y=gamma0, label=name), size=3) + 
+  scale_x_discrete(limits=1:10) + 
+  scale_y_discrete(limits=1:5) + 
+  labs(x="alpha=2.9", y="alpha=0") + 
+  theme_bw()
+
+#ggsave("Fig_clusters.pdf", height = 22, width=42, units="cm")
+
+```
+
+
+
+
+##6.3. Multi-resolution method with Louvain: occupations
+
+###Scanning gamma
+
+```{r}
+Q.var <- rep(0, 101)
+clust <- matrix(0, nrow=223, ncol=101) #223 node, 101 gamma value
+L <- rep(0, 101)
+connections <- rep(0, 101)
+
+for (i in 0:100){
+j <- i/10
+DF.pur <- melt(A)
+DF.pur <- DF.pur[DF.pur$value!=0,]
+DF.pur$Var2 <- as.factor(DF.pur$Var2)
+
+degree.tr <- data.frame(rownames(A),rowSums(A))
+names(degree.tr) <- c("names", "degree.tr")
+degree.oc <- data.frame(colnames(A),colSums(A))
+names(degree.oc) <- c("names", "degree.oc")
+
+DF.pur <- left_join(DF.pur, degree.tr, by=c("Var1"="names"))
+DF.pur <- left_join(DF.pur, degree.oc, by=c("Var2"="names"))
+
+DF.pur$exp <- round((DF.pur$degree.tr * DF.pur$degree.oc * j) / sum(A)) #(k_i*k_j)/(L)
+DF.pur$diff <- DF.pur$value - DF.pur$exp
+DF.pur$sparse <- ifelse(DF.pur$diff>=0, DF.pur$value, 0)
+L[i+1] <- sum(DF.pur$sparse)
+connections[i+1] <- 2054-sum(DF.pur$sparse==0)
+
+A.pur <- acast(DF.pur, Var1 ~ Var2, value.var = "sparse")
+A.pur[is.na(A.pur)] <- 0
+
+g.pur <- graph.incidence(A.pur, directed=F, weighted = T)
+
+lou <- cluster_louvain(g.pur)
+
+clust[,i+1] <- lou$membership
+Q.var[i+1] <- modularity(lou)
+}
+
+rownames(clust) <- lou$names
+colnames(clust) <- seq(0, 10, 0.1)
+```
+
+
+###Similarity of nodes
+
+```{r}
+S <- matrix(0, nrow=223, ncol=223)
+rownames(S) <- rownames(clust)
+colnames(S) <- rownames(clust)
+```
+
+```{r}
+res1 <- 30
+res2 <- 35
+for (i in 1:223){
+  for (j in 1:223){
+    S[i,j] <- sum(clust[i,res1:res2]-clust[j,res1:res2]==0)
+    S[j,i] <- S[i,j]
+  }
+}
+
+S.oc <- S[111:223, 111:223]
+S.oc <- S.oc/(res2-res1+1)
+```
+
+```{r}
+longData<-melt(S.oc)
+longData<-longData[longData$value!=0,]
+
+#o <- seriate(S.oc, method = "BEA_TSP")
+#longData$Var1 <- factor(longData$Var1, levels=names(unlist(o[[1]][])))
+#longData$Var2 <- factor(longData$Var2, levels=names(unlist(o[[1]][])))
+
+ord <- read.csv("ordering_occup.csv")
+
+longData$Var1 <- factor(longData$Var1, levels=ord[,2])
+longData$Var2 <- factor(longData$Var2, levels=ord[,2])
+
+cl <- data.frame(names(unlist(ord[[1]][])))
+cl <- data.frame(ord[,2])
+colnames(cl)[1] <- "occupations"
+cl$occupations <- as.character(cl$occupations)
+
+clust2 <- data.frame(rownames(clust), clust[,30])
+rownames(clust2) <- 1:223
+colnames(clust2) <- c("programs", "clusters")
+
+cl <- left_join(cl, clust2, by=c("occupations"="programs"))
+
+#color palette for axis
+axis.x.colour <- (cl[,2] %>% plyr::mapvalues(from=c(1:10), to=c("#B40404", "#e68a00", "#0B6121", "#000099", "#0099cc", "#00cc99", "#6600cc", "#e600e6", "#999900", "#7094db")))
+
+#ordering <- names(unlist(o[[1]][]))
+#write.csv(ordering, "ordering_occup.csv")
+```
+
+```{r}
+ggplot(longData, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_gradient(low="grey60", high="red") +
+  labs(x="", y="", title="") +
+  theme_bw() + 
+  theme(axis.text.x=element_text(size=5, angle=90, vjust=0.2, hjust=1),
+                     axis.text.y=element_text(size=5),
+                     legend.text=element_text(size=8),
+                     legend.title=element_text(size=8)) +
+  theme(axis.text.x=element_text(colour=axis.x.colour)) +
+  theme(axis.text.y=element_text(colour=axis.x.colour)) +
+  annotate("segment", x = 20.5, xend = 20.5, y = 0, yend = 113.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 42.5, xend = 42.5, y = 0, yend = 113.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 68.5, xend = 68.5, y = 0, yend = 113.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 84.5, xend = 84.5, y = 0, yend = 113.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 113.5, y = 20.5, yend = 20.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 113.5, y = 42.5, yend = 42.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 113.5, y = 68.5, yend = 68.5, colour = "blue", size = 0.5) +
+  annotate("segment", x = 0, xend = 113.5, y = 84.5, yend = 84.5, colour = "blue", size = 0.5)
+
+
+#ggsave("oc_Fig_2.9-3.4_v2.pdf", height = 22, width=23, units="cm")
+```
+
+
+
+
